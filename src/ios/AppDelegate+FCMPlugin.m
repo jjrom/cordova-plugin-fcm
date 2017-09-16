@@ -37,23 +37,9 @@
 static NSData *lastPush;
 NSString *const kGCMMessageIDKey = @"gcm.message_id";
 
-//Method swizzling
-+ (void)load
-{
-    Method original =  class_getInstanceMethod(self, @selector(application:didFinishLaunchingWithOptions:));
-    Method custom =    class_getInstanceMethod(self, @selector(application:customDidFinishLaunchingWithOptions:));
-    method_exchangeImplementations(original, custom);
-}
++ (void)register_for_notifications {
 
-- (BOOL)application:(UIApplication *)application customDidFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-
-    [self application:application customDidFinishLaunchingWithOptions:launchOptions];
-
-    NSLog(@"DidFinishLaunchingWithOptions");
- 
-    
-    // Register for remote notifications. This shows a permission dialog on first run, to
-    // show the dialog at a more appropriate time move this registration accordingly.
+    // Register for remote notifications. This shows a permission dialog
     if (floor(NSFoundationVersionNumber) <= NSFoundationVersionNumber_iOS_7_1) {
         // iOS 7.1 or earlier. Disable the deprecation warnings.
 #pragma clang diagnostic push
@@ -62,7 +48,7 @@ NSString *const kGCMMessageIDKey = @"gcm.message_id";
         (UIRemoteNotificationTypeSound |
          UIRemoteNotificationTypeAlert |
          UIRemoteNotificationTypeBadge);
-        [application registerForRemoteNotificationTypes:allNotificationTypes];
+        [[UIApplication sharedApplication] registerForRemoteNotificationTypes:allNotificationTypes];
 #pragma clang diagnostic pop
     } else {
         // iOS 8 or later
@@ -98,18 +84,14 @@ NSString *const kGCMMessageIDKey = @"gcm.message_id";
     [FIRApp configure];
     // [END configure_firebase]
     // Add observer for InstanceID token refresh callback.
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(tokenRefreshNotification:)
+        AppDelegate *appDelegate = (AppDelegate *)[[UIApplication sharedApplication] delegate];
+    [[NSNotificationCenter defaultCenter] addObserver:appDelegate selector:@selector(tokenRefreshNotification:)
                                                  name:kFIRInstanceIDTokenRefreshNotification object:nil];
-    return YES;
 }
 
 // [START message_handling]
 // Receive displayed notifications for iOS 10 devices.
-
-// Note on the pragma: When compiling with iOS 10 SDK, include methods that
-//                     handle notifications using notification center.
 #if defined(__IPHONE_10_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_10_0
-
 // Handle incoming notification messages while app is in the foreground.
 - (void)userNotificationCenter:(UNUserNotificationCenter *)center
        willPresentNotification:(UNNotification *)notification
@@ -162,21 +144,9 @@ didReceiveNotificationResponse:(UNNotificationResponse *)response
     
     completionHandler();
 }
-#endif
-
+#else
 // [START receive_message in background iOS < 10]
-
-// Include the iOS < 10 methods for handling notifications for when running on iOS < 10.
-// As in, even if you compile with iOS 10 SDK, when running on iOS 9 the only way to get
-// notifications is the didReceiveRemoteNotification.
-
-- (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo
-{
-    // Short-circuit when actually running iOS 10+, let notification centre methods handle the notification.
-    if (NSFoundationVersionNumber >= NSFoundationVersionNumber_iOS_9_x_Max) {
-        return;
-    }
-
+- (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo {
     NSLog(@"Message ID: %@", userInfo[@"gcm.message_id"]);
     
     NSError *error;
@@ -199,11 +169,6 @@ didReceiveNotificationResponse:(UNNotificationResponse *)response
 - (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo
 fetchCompletionHandler:(void (^)(UIBackgroundFetchResult))completionHandler
 {
-    // Short-circuit when actually running iOS 10+, let notification centre methods handle the notification.
-    if (NSFoundationVersionNumber >= NSFoundationVersionNumber_iOS_9_x_Max) {
-        return;
-    }
-
     // If you are receiving a notification message while your app is in the background,
     // this callback will not be fired till the user taps on the notification launching the application.
     // TODO: Handle data of notification
@@ -214,30 +179,24 @@ fetchCompletionHandler:(void (^)(UIBackgroundFetchResult))completionHandler
     // Pring full message.
     NSLog(@"%@", userInfo);
     NSError *error;
-
+    
     NSDictionary *userInfoMutable = [userInfo mutableCopy];
-
-    // Has user tapped the notificaiton?
-    // UIApplicationStateActive   - app is currently active
-    // UIApplicationStateInactive - app is transitioning from background to
-    //                              foreground (user taps notification)
-
-    UIApplicationState state = application.applicationState;
-    if (application.applicationState == UIApplicationStateActive
-        || application.applicationState == UIApplicationStateInactive) {
+    
+    //USER NOT TAPPED NOTIFICATION
+    if (application.applicationState == UIApplicationStateActive) {
         [userInfoMutable setValue:@(NO) forKey:@"wasTapped"];
         NSLog(@"app active");
         NSData *jsonData = [NSJSONSerialization dataWithJSONObject:userInfoMutable
                                                            options:0
                                                              error:&error];
         [FCMPlugin.fcmPlugin notifyOfMessage:jsonData];
-
-    // app is in background
+    // app is in background or in stand by (NOTIFICATION WILL BE TAPPED)
     }
 
     completionHandler(UIBackgroundFetchResultNoData);
 }
 // [END receive_message iOS < 10]
+#endif
 // [END message_handling]
 
 
